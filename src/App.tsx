@@ -93,7 +93,7 @@ export default function App() {
       .then(({ data }: any) => setRol(data?.rol ?? 'viewer'))
   }, [user])
 
-  useEffect(() => { if (user && rol) loadAll() }, [user, rol])
+  useEffect(() => { if (user) loadAll() }, [user])
 
   const handleAuth = async () => {
     setAuthLoading(true); setAuthError('')
@@ -216,17 +216,14 @@ export default function App() {
 
   const setUserRol = async (user_id: string, email: string, newRol: Rol | null) => {
     if (!isAdmin) return
+    const rol = (newRol || 'viewer') as Rol
     const existing = allUsers.find(u => u.user_id === user_id)
-    if (newRol === null) {
-      await supabase.from('usuarios_roles').delete().eq('user_id', user_id)
-      setAllUsers(prev => prev.map(u => u.user_id === user_id ? { ...u, rol: null } : u))
-    } else if (existing?.rol) {
-      await supabase.from('usuarios_roles').update({ rol: newRol }).eq('user_id', user_id)
-      setAllUsers(prev => prev.map(u => u.user_id === user_id ? { ...u, rol: newRol } : u))
+    if (existing?.rol) {
+      await supabase.from('usuarios_roles').update({ rol }).eq('user_id', user_id)
     } else {
-      await supabase.from('usuarios_roles').insert({ user_id, email, rol: newRol })
-      setAllUsers(prev => prev.map(u => u.user_id === user_id ? { ...u, rol: newRol } : u))
+      await supabase.from('usuarios_roles').insert({ user_id, email, rol })
     }
+    setAllUsers(prev => prev.map(u => u.user_id === user_id ? { ...u, rol } : u))
   }
 
   // ── Derived helpers ──────────────────────────────────────────────────────────
@@ -1004,10 +1001,10 @@ export default function App() {
                             {r}
                           </button>
                         ))}
-                        {u.rol && u.user_id !== user?.id && (
-                          <button onClick={() => setUserRol(u.user_id, u.email, null)}
+                        {u.rol !== 'viewer' && u.user_id !== user?.id && (
+                          <button onClick={() => setUserRol(u.user_id, u.email, 'viewer')}
                             style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, cursor: 'pointer', border: `1px solid ${COLORS.border}`, background: 'transparent', color: COLORS.text3 }}>
-                            quitar
+                            → viewer
                           </button>
                         )}
                       </div>
