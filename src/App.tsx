@@ -329,79 +329,59 @@ export default function App() {
         if (!data.projects || !data.tasks) { alert('Archivo no válido'); return }
         if (!confirm(`¿Importar datos?\nProyectos: ${data.projects.length} | Tareas: ${data.tasks.length}\n\nEsto agregará los datos al sistema.`)) return
 
-        // Migrate tasks from HTML format to Supabase format
-        const migratedTasks = data.tasks.map((t: any) => ({
-          id: t.id,
-          pid: t.pid,
-          sid: t.sid || null,
-          name: t.name,
-          owner: t.owner || '',
-          start_date: t.start_date || t.start || null,
-          end_date: t.end_date || t.end || null,
-          real_start: t.real_start || t.realStart || null,
-          real_end: t.real_end || t.realEnd || null,
-          hh_prog: t.hh_prog ?? t.hhProg ?? 0,
-          hh_real: t.hh_real ?? t.hhReal ?? 0,
-          pct: t.pct ?? 0,
-          status: t.status || 'todo',
-          deps: t.deps || []
-        }))
+        // Map old IDs to new UUIDs
+        const idMap: Record<string, string> = {}
+        const newUuid = () => crypto.randomUUID()
 
-        // Migrate persons — HTML stores as string array, Supabase as objects
-        const migratedPersons = (data.persons || []).map((p: any) =>
-          typeof p === 'string' ? { name: p } : p
-        )
+        // Generate new IDs for projects
+        for (const p of data.projects) idMap[p.id] = newUuid()
+        // Generate new IDs for stages
+        for (const s of (data.stages || [])) idMap[s.id] = newUuid()
+        // Generate new IDs for tasks
+        for (const t of data.tasks) idMap[t.id] = newUuid()
+        // Generate new IDs for persons
+        for (const p of (data.persons || [])) if (typeof p === 'object') idMap[p.id] = newUuid()
 
-        // Migrate stages
-        const migratedStages = (data.stages || []).map((s: any) => ({
-          id: s.id,
-          pid: s.pid,
-          name: s.name,
-          order: s.order ?? 0
-        }))
-
-        // Migrate org data from HTML nested format {pid: [...]} to flat rows
-        const migratedOrgNodes: any[] = []
-        const migratedOrgEdges: any[] = []
-        const migratedOrgChecks: any[] = []
-
-        if (data.orgNodes && typeof data.orgNodes === 'object' && !Array.isArray(data.orgNodes)) {
-          Object.entries(data.orgNodes).forEach(([pid, nodes]: any) => {
-            nodes.forEach((n: any) => migratedOrgNodes.push({ pid, node_key: n.tid, x: n.x, y: n.y }))
-          })
-        } else if (Array.isArray(data.orgNodes)) {
-          migratedOrgNodes.push(...data.orgNodes)
+        // Insert projects
+        for (const p of data.projects) {
+          await supabase.from('projects').insert({ id: idMap[p.id], name: p.name, color: p.color || '#4f8ef7' })
         }
 
-        if (data.orgEdges && typeof data.orgEdges === 'object' && !Array.isArray(data.orgEdges)) {
-          Object.entries(data.orgEdges).forEach(([pid, edges]: any) => {
-            edges.forEach((e: any) => migratedOrgEdges.push({ pid, from_key: e.from, to_key: e.to }))
-          })
-        } else if (Array.isArray(data.orgEdges)) {
-          migratedOrgEdges.push(...data.orgEdges)
+        // Insert stages
+        for (const s of (data.stages || [])) {
+          await supabase.from('stages').insert({ id: idMap[s.id], pid: idMap[s.pid] || s.pid, name: s.name, order: s.order ?? 0 })
         }
 
-        if (data.orgChecks && typeof data.orgChecks === 'object' && !Array.isArray(data.orgChecks)) {
-          Object.entries(data.orgChecks).forEach(([key, done]: any) => {
-            const [tid, sid] = key.split('_')
-            if (tid && sid) migratedOrgChecks.push({ tid, sid, done: !!done })
-          })
-        } else if (Array.isArray(data.orgChecks)) {
-          migratedOrgChecks.push(...data.orgChecks)
+        // Insert persons
+        for (const p of (data.persons || [])) {
+          if (typeof p === 'string') await supabase.from('persons').insert({ name: p })
+          else await supabase.from('persons').insert({ id: idMap[p.id], name: p.name })
         }
 
-        for (const p of data.projects) await supabase.from('projects').upsert(p)
-        for (const s of migratedStages) await supabase.from('stages').upsert(s)
-        for (const t of migratedTasks) await supabase.from('tasks').upsert(t)
-        for (const p of migratedPersons) if (p.name) await supabase.from('persons').upsert(p)
-        for (const n of migratedOrgNodes) await supabase.from('org_nodes').upsert(n)
-        for (const e of migratedOrgEdges) await supabase.from('org_edges').upsert(e)
-        for (const c of migratedOrgChecks) await supabase.from('org_checks').upsert(c)
+        // Insert tasks
+        for (const t of data.tasks) {
+          await supabase.from('tasks').insert({
+            id: idMap[t.id],
+            pid: idMap[t.pid] || t.pid,
+            sid: t.sid ? (idMap[t.sid] || null) : null,
+            name: t.name,
+            owner: t.owner || '',
+            start_date: t.start_date || t.start || null,
+            end_date: t.end_date || t.end || null,
+            real_start: t.real_start || t.realStart || null,
+            real_end: t.real_end || t.realEnd || null,
+            hh_prog: t.hh_prog ?? t.hhProg ?? 0,
+            hh_real: t.hh_real ?? t.hhReal ?? 0,
+            pct: t.pct ?? 0,
+            status: t.status || 'todo',
+            deps: []
+          })
+        }
 
         await loadAll()
         alert('✓ Datos importados correctamente.')
       } catch (err) {
-        alert('Error al leer el archivo: ' + (err as any).message)
+        alert('Error al importar: ' + (err as any).message)
       }
     }
     reader.readAsText(file)
