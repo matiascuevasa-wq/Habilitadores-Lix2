@@ -1001,7 +1001,7 @@ export default function App() {
                             {r}
                           </button>
                         ))}
-                        {u.rol !== 'viewer' && u.user_id !== user?.id && (
+                        {u.rol === 'admin' && u.user_id !== user?.id && (
                           <button onClick={() => setUserRol(u.user_id, u.email, 'viewer')}
                             style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, cursor: 'pointer', border: `1px solid ${COLORS.border}`, background: 'transparent', color: COLORS.text3 }}>
                             → viewer
