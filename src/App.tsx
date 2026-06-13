@@ -521,6 +521,39 @@ export default function App() {
     const bodyLeftRef = useRef<HTMLDivElement>(null)
     const bodyRightRef = useRef<HTMLDivElement>(null)
     const headerRightRef = useRef<HTMLDivElement>(null)
+    const ganttRef = useRef<HTMLDivElement>(null)
+    const [colW, setColW] = useState({ task: 180, owner: 110, hh: 80, status: 80, date: 78 })
+    const [exporting, setExporting] = useState(false)
+
+    const startResize = (col: keyof typeof colW, e: React.MouseEvent) => {
+      e.preventDefault()
+      const startX = e.clientX
+      const startW = colW[col]
+      const onMove = (ev: MouseEvent) => {
+        const newW = Math.max(50, startW + ev.clientX - startX)
+        setColW(prev => ({ ...prev, [col]: newW }))
+      }
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
+    }
+
+    const ResizableColHead = ({ col, children }: { col: keyof typeof colW, children: React.ReactNode }) => (
+      <div style={{ width: colW[col], flexShrink: 0, fontSize: 10, color: COLORS.text3, fontFamily: 'monospace', paddingBottom: 6, position: 'relative', overflow: 'visible', whiteSpace: 'nowrap' }}>
+        {children}
+        <div onMouseDown={e => startResize(col, e)}
+          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 6, cursor: 'col-resize', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 2, height: '60%', background: COLORS.border2, borderRadius: 1 }} />
+        </div>
+      </div>
+    )
 
     useEffect(() => {
       const bl = bodyLeftRef.current, br = bodyRightRef.current, hr = headerRightRef.current
@@ -619,13 +652,35 @@ export default function App() {
               {sMin && sMax && <div style={{ position: 'absolute', left: daysBetween(min, sMin) * DAY_W, top: 14, height: 4, width: daysBetween(sMin, sMax) * DAY_W + DAY_W, background: p.color, opacity: 0.2, borderRadius: 2 }} />}
             </div>
           )
-          if (!isSC) st.forEach(t => renderTaskRow(t, p, min, totalW, todayOffset, leftRows, rightRows))
+          if (!isSC) st.forEach(t => renderTaskRow(t, p, min, totalW, todayOffset, leftRows, rightRows, colW))
         })
-        unstaged.forEach(t => renderTaskRow(t, p, min, totalW, todayOffset, leftRows, rightRows))
+        unstaged.forEach(t => renderTaskRow(t, p, min, totalW, todayOffset, leftRows, rightRows, colW))
       }
     })
 
-    const colW = { task: 180, owner: 110, hh: 80, status: 80, date: 78 }
+    const exportGanttPNG = () => {
+      if (!ganttRef.current) return
+      setExporting(true)
+      const run = () => {
+        const w = window as any
+        w.html2canvas(ganttRef.current, { backgroundColor: COLORS.bg, scale: 2, useCORS: true, logging: false })
+          .then((canvas: HTMLCanvasElement) => {
+            const a = document.createElement('a')
+            a.download = `gantt_${fmtDate(todayDate())}.png`
+            a.href = canvas.toDataURL('image/png')
+            a.click()
+            setExporting(false)
+          })
+          .catch(() => setExporting(false))
+      }
+      const w = window as any
+      if (w.html2canvas) { run(); return }
+      const s = document.createElement('script')
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'
+      s.onload = run
+      s.onerror = () => setExporting(false)
+      document.head.appendChild(s)
+    }
 
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -645,17 +700,20 @@ export default function App() {
           <button style={btnStyle('sm')} onClick={() => setShowDates(s => !s)} title="Mostrar/ocultar columnas de fecha" data-active={showDates}>
             📅 Fechas
           </button>
+          <button style={btnStyle('sm')} onClick={exportGanttPNG} disabled={exporting} title="Descargar la carta Gantt como imagen">
+            {exporting ? '⏳ Generando...' : '📷 Exportar PNG'}
+          </button>
         </div>
 
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div ref={ganttRef} style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Left panel */}
           <div style={{ width: 24 + colW.task + colW.owner + colW.hh + colW.status + (showDates ? colW.date * 4 : 0), flexShrink: 0, borderRight: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', padding: '0 12px', height: 56, borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bg2, flexShrink: 0 }}>
-              <ColHead w={colW.task}>Tarea</ColHead>
-              <ColHead w={colW.owner}>Responsable</ColHead>
-              <ColHead w={colW.hh}>% / HH</ColHead>
-              {showDates && <><ColHead w={colW.date}>Ini.Plan</ColHead><ColHead w={colW.date}>Fin Plan</ColHead><ColHead w={colW.date}>Ini.Real</ColHead><ColHead w={colW.date}>Fin Real</ColHead></>}
-              <ColHead w={colW.status}>Estado</ColHead>
+              <ResizableColHead col="task">Tarea</ResizableColHead>
+              <ResizableColHead col="owner">Responsable</ResizableColHead>
+              <ResizableColHead col="hh">% / HH</ResizableColHead>
+              {showDates && <><ResizableColHead col="date">Ini.Plan</ResizableColHead><ColHead w={colW.date}>Fin Plan</ColHead><ColHead w={colW.date}>Ini.Real</ColHead><ColHead w={colW.date}>Fin Real</ColHead></>}
+              <ResizableColHead col="status">Estado</ResizableColHead>
             </div>
             <div ref={bodyLeftRef} style={{ overflowY: 'auto', flex: 1 }}>{leftRows}</div>
           </div>
@@ -676,13 +734,12 @@ export default function App() {
     )
   }
 
-  function renderTaskRow(t: Task, p: Project, min: Date, totalW: number, todayOffset: number, leftRows: React.ReactNode[], rightRows: React.ReactNode[]) {
+  function renderTaskRow(t: Task, p: Project, min: Date, totalW: number, todayOffset: number, leftRows: React.ReactNode[], rightRows: React.ReactNode[], colW = { task: 180, owner: 110, hh: 80, status: 80, date: 78 }) {
     const s = taskStatus(t)
     const pct = t.pct || 0
     const pc = pctColor(pct)
     const badge = badgeStyle(t)
     const todayStr = fmtDate(todayDate())
-    const colW = { task: 180, owner: 110, hh: 80, status: 80, date: 78 }
 
     const DateCell = ({ field, val, isReal }: { field: keyof Task, val: string | null, isReal: boolean }) => {
       const [editing, setEditing] = useState(false)
