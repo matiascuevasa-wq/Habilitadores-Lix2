@@ -308,6 +308,46 @@ export default function App() {
   }
 
   // ── Duplicate stage ──────────────────────────────────────────────────────────
+  const exportData = () => {
+    const data = { projects, stages, tasks, persons, orgNodes, orgEdges, orgChecks, exportedAt: new Date().toISOString() }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `gestion_proyectos_${fmtDate(todayDate())}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const importData = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string)
+        if (!data.projects || !data.tasks) { alert('Archivo no válido'); return }
+        if (!confirm(`¿Importar datos?\nProyectos: ${data.projects.length} | Tareas: ${data.tasks.length}\n\nEsto agregará los datos al sistema.`)) return
+
+        // Insert all data
+        for (const p of data.projects) await supabase.from('projects').upsert(p)
+        for (const s of data.stages || []) await supabase.from('stages').upsert(s)
+        for (const t of data.tasks) await supabase.from('tasks').upsert({ ...t, deps: t.deps || [] })
+        for (const p of data.persons || []) await supabase.from('persons').upsert(p)
+        for (const n of data.orgNodes || []) await supabase.from('org_nodes').upsert(n)
+        for (const e of data.orgEdges || []) await supabase.from('org_edges').upsert(e)
+        for (const c of data.orgChecks || []) await supabase.from('org_checks').upsert(c)
+
+        await loadAll()
+        alert('✓ Datos importados correctamente.')
+      } catch (err) {
+        alert('Error al leer el archivo. Asegúrate de que sea un JSON exportado desde esta app.')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
   const duplicateStage = async (fromSid: string, fromPid: string, toSid: string, toPid: string) => {
     const src = stageTasks(fromSid, fromPid)
     for (const t of src) {
@@ -380,6 +420,11 @@ export default function App() {
           {isAdmin && <button style={btnStyle('sm')} onClick={() => setModal({ type: 'project' })}>+ Proyecto</button>}
           {isAdmin && <button style={btnStyle('sm')} onClick={() => setModal({ type: 'person' })}>+ Responsable</button>}
           <div style={{ borderTop: `1px solid ${COLORS.border}`, marginTop: 4, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <button style={btnStyle('sm')} onClick={exportData}>⬇ Exportar datos</button>
+            <label style={{ ...btnStyle('sm'), cursor: 'pointer', textAlign: 'center' }}>
+              ⬆ Importar datos
+              <input type="file" accept=".json" onChange={importData} style={{ display: 'none' }} />
+            </label>
             <button style={btnStyle('sm')} onClick={handleLogout}>⎋ Cerrar sesión</button>
           </div>
         </div>
@@ -1001,7 +1046,7 @@ export default function App() {
                             {r}
                           </button>
                         ))}
-                        {u.rol === 'admin' && u.user_id !== user?.id && (
+                        {u.rol !== 'viewer' && u.user_id !== user?.id && (
                           <button onClick={() => setUserRol(u.user_id, u.email, 'viewer')}
                             style={{ padding: '3px 8px', borderRadius: 4, fontSize: 11, cursor: 'pointer', border: `1px solid ${COLORS.border}`, background: 'transparent', color: COLORS.text3 }}>
                             → viewer
